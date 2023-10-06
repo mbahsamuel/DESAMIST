@@ -1,94 +1,66 @@
-# 1 CREATING A VPC
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc
+provider "aws" {
+  region = "${var.region}"
+}
 
-resource "aws_vpc" "prod" {
-  cidr_block       = "10.0.0.0/16"
-  instance_tenancy = "default"
+data "aws_ami" "ubuntu" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["${var.ami_name_value}"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["${var.ami_virtualization_type}"]
+  }
+
+  filter {
+    name = "owner-alias"
+
+    values = [
+      "amazon",
+    ]
+  }
+}
+
+/*
+// Use Security Group module to create security group
+module "security_group" {
+  source = "git::https://github.com/Patelvijaykumar/terraform-aws-security-group"
+  vpc_id = "${var.vpc_id}"
+}
+*/
+
+resource "aws_security_group" "allow_all" {
+  count       = "${var.iscreate == "" ? 1 : 0}"
+  name        = "instance_sg"
+  description = "Allow all inbound traffic for security group"
+  vpc_id      = "${var.vpc_id}"
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    cidr_blocks     = ["0.0.0.0/0"]
+    prefix_list_ids = ["pl-12c4e678"]
+  }
+}
+
+resource "aws_instance" "web" {
+  ami                    = "${data.aws_ami.ubuntu.id}"
+  instance_type          = "${var.instance_type}"
+  key_name               = "${var.keyname}"
+  vpc_security_group_ids = ["${var.sg_id}"]
 
   tags = {
-    Name = "prod"
+    Name = "${var.tag}"
   }
-}
-
-# create an IGW
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/internet_gateway
-
-resource "aws_internet_gateway" "prod" {
-  vpc_id = aws_vpc.prod.id
-
-  tags = {
-    Name =  "${var.tag}"  #"prod"
-  }
-}
-
-variable "tag" {
-  default = "prod"
-}
-
-# creating subnet public sn
-#https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet
-
-resource "aws_subnet" "pub-sn" {
-  vpc_id     = aws_vpc.prod.id
-  cidr_block = "10.0.1.0/24"
-  map_public_ip_on_launch = "true"
-
-  tags = {
-    Name = "public-sn"
-  }
-}
-
-# private sn
-resource "aws_subnet" "private-sn" {
-  vpc_id     = aws_vpc.prod.id
-  cidr_block = "10.0.2.0/24"
-  availability_zone = "us-east-1a"
- 
-  tags = {
-    Name = "private sn"
-  }
-}
-
-# creating a route table
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table
-resource "aws_route_table" "pub-rt" {
-  vpc_id = aws_vpc.prod.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.prod.id
-  }
-
-  route {
-    ipv6_cidr_block = "::/0"
-    gateway_id      = aws_internet_gateway.prod.id
-  }
-
-  tags = {
-    Name = "pub-rt"
-  }
-}
-
-
-# private RT
-
-resource "aws_route_table" "private-rt" {
-  vpc_id = aws_vpc.prod.id
-  tags = {
-    Name = "private-rt"
-  }
-}
-
-# route table association
-# associate our public route table
-resource "aws_route_table_association" "pub-route-associate" {
-  subnet_id      = aws_subnet.pub-sn.id
-  route_table_id = aws_route_table.pub-rt.id
-}
-
-#associate private Rt
-
-resource "aws_route_table_association" "private-route-associate" {
-  subnet_id      = aws_subnet.private-sn.id
-  route_table_id = aws_route_table.private-rt.id
 }
